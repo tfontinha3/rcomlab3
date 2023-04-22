@@ -1,93 +1,77 @@
-// receiver prototype
+/*Non-Canonical Input Processing*/
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <termios.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
+#include <stdlib.h>
+#include <unistd.h>
 
-#define SOH 0x01
-#define EOT 0x04
-#define ACK 0x06
-#define NAK 0x15
-#define CAN 0x18
+#define BAUDRATE B38400
+#define _POSIX_SOURCE 1 /* POSIX compliant source */
+#define FALSE 0
+#define TRUE 1
 
-bool receive_packet(FILE *file, int packet_num)
+volatile int STOP=FALSE;
+
+int main(int argc, char** argv)
 {
-    char packet[132];
-    int i, c;
+    int fd,c, res;
+    struct termios oldtio,newtio;
+    char buf[255];
 
-    for (i = 0; i < 10; i++) {
-        c = fgetc(stdin);
-        packet[i] = c;
+    if ( (argc < 2) ||
+         ((strcmp("/dev/ttyS0", argv[1])!=0) &&
+          (strcmp("/dev/ttyS1", argv[1])!=0) )) {
+        printf("Usage:\tnserial SerialPort\n\tex: nserial /dev/ttyS1\n");
+        exit(1);
     }
 
-    if (packet[0] != SOH) {
-        printf("Unexpected packet header 0x%02X, retrying\n", packet[0]);
-        return false;
+    /*
+    Open serial port device for reading and writing and not as controlling tty
+    because we don't want to get killed if linenoise sends CTRL-C.
+    */
+
+    fd = open(argv[1], O_RDWR | O_NOCTTY );
+    if (fd < 0) { perror(argv[1]); exit(-1); }
+
+    if (tcgetattr(fd,&oldtio) == -1) { /* save current port settings */
+        perror("tcgetattr");
+        exit(-1);
     }
 
-    if (packet[1] != packet_num) {
-        printf("Unexpected packet number %d, retrying\n", packet[1]);
-        return false;
+    bzero(&newtio, sizeof(newtio));
+    newtio.c_cflag = BAUDRATE | CS8 | CLOCAL | CREAD;
+    newtio.c_iflag = IGNPAR;
+    newtio.c_oflag = 0;
+
+    /* set input mode (non-canonical, no echo,...) */
+    newtio.c_lflag = 0;
+
+    newtio.c_cc[VTIME]    = 0;   /* inter-character timer unused */
+    newtio.c_cc[VMIN]     = 1;   /* blocking read until 1 char received */
+
+    tcflush(fd, TCIOFLUSH);
+
+    if (tcsetattr(fd,TCSANOW,&newtio) == -1) {
+        perror("tcsetattr");
+        exit(-1);
     }
 
-    if ((packet[1] + packet[2]) != 0xFF) {
-        printf("Packet number complement error, retrying\n");
-        return false;
+    printf("New termios structure set\n");
+
+    while (STOP==FALSE) {       /* loop for input */
+        res = read(fd,buf,255);   /* returns after 1 char has been input */
+        buf[res]=0;               /* set end of string, so we can printf */
+        printf("Received %d bytes: %s\n", res, buf);
+        if (strcmp(buf, "exit") == 0) STOP = TRUE;
+        res = write(fd,buf,strlen(buf)+1); /* +1 to account for null terminator */
+        printf("Sent %d bytes back to transmitter: %s\n", res, buf);
     }
 
-    unsigned char checksum = 0;
-    for (i = 3; i < 131; i++) {
-        checksum += packet[i];
-    }
-    if (checksum != packet[131]) {
-        printf("Checksum error, retrying\n");
-        return false;
-    }
-
-    for (i = 3; i < 131; i++) {
-        fputc(packet[i], file);
-    }
-
-    return true;
+    tcsetattr(fd,TCSANOW,&oldtio);
+    close(fd);
+    return 0;
 }
-
-int main(int argc, char *argv[])
-{
-    if (argc != 2) {
-        printf("Usage: xmodem <filename>\n");
-        return EXIT_FAILURE;
-    }
-
-    FILE *file = fopen(argv[1], "wb");
-    if (file == NULL) {
-        printf("Failed to open file %s\n", argv[1]);
-        return EXIT_FAILURE;
-    }
-
-    bool received_packet;
-    int packet_num = 1;
-    do {
-        fputc(NAK, stdout);
-        received_packet = receive_packet(file, packet_num);
-        if (received_packet) {
-            packet_num++;
-        }
-    } while (!received_packet);
-
-    fputc(ACK, stdout);
-    int c = fgetc(stdin);
-    if (c == EOT) {
-        fputc(ACK, stdout);
-        printf("File received successfully\n");
-    } else if (c == CAN) {
-        printf("Received CAN, aborting\n");
-        return EXIT_FAILURE;
-    } else {
-        printf("Unexpected response 0x%02X\n", c);
-        return EXIT_FAILURE;
-    }
-
-    fclose(file);
-    return EXIT_SUCCESS;
-}
-*/
