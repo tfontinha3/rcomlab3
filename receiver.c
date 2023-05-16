@@ -14,13 +14,27 @@
 #define FALSE 0
 #define TRUE 1
 
+#define FLAG 0x5c
+#define A_TRANSMITTER 0x01
+#define A_RECEIVER 0x03
+#define C_UA 0x07
+
+typedef enum{
+    INICIAL,
+    WAIT_SET,
+    SEND_UA,
+    UA_SENT,
+} CONTROLO;
+
+CONTROLO CONT = INICIAL;
+
 volatile int STOP=FALSE;
 
 int main(int argc, char** argv)
 {
     int fd,c, res;
     struct termios oldtio,newtio;
-    char buf[255];
+    unsigned int buf[5];
 
     if ( (argc < 2) ||
          ((strcmp("/dev/ttyS0", argv[1])!=0) &&
@@ -62,14 +76,19 @@ int main(int argc, char** argv)
 
     printf("New termios structure set\n");
 
-    while (STOP==FALSE) {       /* loop for input */
-        res = read(fd,buf,255);   /* returns after 1 char has been input */
-        buf[res]=0;               /* set end of string, so we can printf */
-        printf("Received %d bytes: %s\n", res, buf);
-        if (strcmp(buf, "exit") == 0) STOP = TRUE;
-        res = write(fd,buf,strlen(buf)+1); /* +1 to account for null terminator */
-        printf("Sent %d bytes back to transmitter: %s\n", res, buf);
-    }
+    // Preparing the UA frame
+    buf[0] = FLAG;
+    buf[1] = A_TRANSMITTER;
+    buf[2] = C_UA;
+    buf[3] = buf[0] ^ buf[1];
+    buf[4] = FLAG;
+
+    res = read(fd,buf,5);   /* returns after 1 char has been input */                                  
+    printf("Received SET package: %X %X %X %X %X\n", buf[0], buf[1], buf[2], buf[3], buf[4]);
+
+    res = write(fd,buf,5); 
+    printf("Sent UA package: %X %X %X %X %X\n", buf[0], buf[1], buf[2], buf[3], buf[4]);
+   
 
     tcsetattr(fd,TCSANOW,&oldtio);
     close(fd);
