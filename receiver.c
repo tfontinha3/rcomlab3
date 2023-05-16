@@ -76,15 +76,15 @@ int main(int argc, char** argv)
 
     printf("New termios structure set\n");
 
+    res = read(fd,buf,5);   /* returns after 1 char has been input */                                  
+    printf("Received SET package: %X %X %X %X %X\n", buf[0], buf[1], buf[2], buf[3], buf[4]);
+
     // Preparing the UA frame
     buf[0] = FLAG;
     buf[1] = A_TRANSMITTER;
     buf[2] = C_UA;
     buf[3] = buf[0] ^ buf[1];
     buf[4] = FLAG;
-
-    res = read(fd,buf,5);   /* returns after 1 char has been input */                                  
-    printf("Received SET package: %X %X %X %X %X\n", buf[0], buf[1], buf[2], buf[3], buf[4]);
 
     res = write(fd,buf,5); 
     printf("Sent UA package: %X %X %X %X %X\n", buf[0], buf[1], buf[2], buf[3], buf[4]);
