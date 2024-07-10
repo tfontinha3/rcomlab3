@@ -1,1 +1,1 @@
-Lab3Project
+Small communication project from RCOM
